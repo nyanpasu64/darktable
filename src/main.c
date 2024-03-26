@@ -37,7 +37,7 @@ int main(int argc, char *argv[])
 #ifdef __APPLE__
   dt_osx_prepare_environment();
 #endif
-#ifdef _WIN32
+#ifdef _WIN32_NEVER
   // on Windows we have a hard time showing stuff printed to stdout/stderr to the user.
   // because of that we write it to a log file.
   char datetime[DT_DATETIME_EXIF_LENGTH];
@@ -132,7 +132,7 @@ int main(int argc, char *argv[])
   if(darktable.gimp.mode && darktable.gimp.error)
     fprintf(stdout, "\n<<<gimp\nerror\ngimp>>>\n");
 
-#ifdef _WIN32
+#ifdef _WIN32_NEVER
   if(redirect_output)
   {
     printf("\n");
