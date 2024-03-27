@@ -46,6 +46,9 @@
 #define DT_DEV_AVERAGE_DELAY_START 250
 #define DT_DEV_PREVIEW_AVERAGE_DELAY_START 50
 
+_Thread_local int gRender_pass = 0;
+atomic_int gTid = 1;
+
 typedef enum dt_pixelpipe_flow_t
 {
   PIXELPIPE_FLOW_NONE = 0,
@@ -392,6 +395,7 @@ void dt_dev_pixelpipe_rebuild(dt_develop_t *dev)
 void dt_dev_pixelpipe_create_nodes(dt_dev_pixelpipe_t *pipe,
                                    dt_develop_t *dev)
 {
+  printf("{ dt_dev_pixelpipe_create_nodes pass(%d)\n", gRender_pass);
   dt_pthread_mutex_lock(&pipe->busy_mutex); // block until pipe is idle
   // clear any pending shutdown request
   dt_atomic_set_int(&pipe->shutdown,FALSE);
@@ -405,6 +409,10 @@ void dt_dev_pixelpipe_create_nodes(dt_dev_pixelpipe_t *pipe,
   for(GList *modules = pipe->iop; modules; modules = g_list_next(modules))
   {
     dt_iop_module_t *module = (dt_iop_module_t *)modules->data;
+    if (module && module->multi_priority != 0) {
+      printf("- module %s%s%s\n",
+        module->op, dt_iop_get_instance_id(module), module->enabled ? "" : " (disabled)");
+    }
     dt_dev_pixelpipe_iop_t *piece =
       (dt_dev_pixelpipe_iop_t *)calloc(1, sizeof(dt_dev_pixelpipe_iop_t));
     piece->enabled = module->enabled;
@@ -437,6 +445,7 @@ void dt_dev_pixelpipe_create_nodes(dt_dev_pixelpipe_t *pipe,
   dt_pthread_mutex_unlock(&pipe->busy_mutex); // safe for others to
                                               // use/mess with the
                                               // pipe now
+  printf("} dt_dev_pixelpipe_create_nodes\n");
 }
 
 // helper
@@ -588,6 +597,15 @@ void dt_dev_pixelpipe_synch_top(dt_dev_pixelpipe_t *pipe, dt_develop_t *dev)
 
 void dt_dev_pixelpipe_change(dt_dev_pixelpipe_t *pipe, struct dt_develop_t *dev)
 {
+  int old_render_pass = gRender_pass;
+  // TODO https://www.pcg-random.org/download.html
+  if (gRender_pass == 0) {
+    gRender_pass = atomic_fetch_add_explicit(&gTid, 100, memory_order_relaxed);
+  } else {
+    gRender_pass = (gRender_pass << 5) + gRender_pass + 1;
+  }
+  printf("pass %d -> %d\n", old_render_pass, gRender_pass);
+
   dt_pthread_mutex_lock(&dev->history_mutex);
 
   dt_print_pipe(DT_DEBUG_PARAMS, "pipe state changing",
@@ -1388,9 +1406,22 @@ static gboolean _dev_pixelpipe_process_rec(
   const size_t bpp = dt_iop_buffer_dsc_to_bpp(*out_format);
   const size_t bufsize = (size_t)bpp * roi_out->width * roi_out->height;
 
+  if(piece)
+    dt_print_pipe(DT_DEBUG_PIPE,
+                  "_dev_pixelpipe_process_rec",
+                  piece->pipe, module, pipe->devid, &roi_in, roi_out, "pass(%d) %s from:\n",
+                  gRender_pass,
+                  module_name);
+
+
+#define SHUTDOWN_TRUE { dt_print_pipe(DT_DEBUG_PIPE, \
+                  "early exit", \
+                  piece ? piece->pipe : NULL, module, pipe->devid, &roi_in, roi_out, "pass(%d) pipe->shutdown == true\n", \
+                  gRender_pass); return TRUE; }
+
   // 1) if cached buffer is still available, return data
   if(dt_atomic_get_int(&pipe->shutdown))
-    return TRUE;
+    SHUTDOWN_TRUE
 
   dt_hash_t hash = dt_dev_pixelpipe_cache_hash(pipe->image.id, roi_out, pipe, pos);
 
@@ -1415,7 +1446,7 @@ static gboolean _dev_pixelpipe_process_rec(
                                output, out_format, module, TRUE);
 
     if(dt_atomic_get_int(&pipe->shutdown))
-      return TRUE;
+      SHUTDOWN_TRUE
 
     dt_print_pipe(DT_DEBUG_PIPE,
         "pipe data: from cache", pipe, module, DT_DEVICE_NONE, &roi_in, NULL, "\n");
@@ -1425,21 +1456,26 @@ static gboolean _dev_pixelpipe_process_rec(
     return FALSE;
   }
 
+#define HISTORY_TRUE(PHRASE) { dt_print_pipe(DT_DEBUG_PIPE, \
+                  "early exit", \
+                  piece ? piece->pipe : NULL, module, pipe->devid, &roi_in, roi_out, "pass(%d) " PHRASE "\n", \
+                  gRender_pass); return TRUE; }
+
   // 2) if history changed or exit event, abort processing?
   // preview pipe: abort on all but zoom events (same buffer anyways)
-  if(dt_iop_breakpoint(dev, pipe)) return TRUE;
+  if(dt_iop_breakpoint(dev, pipe)) HISTORY_TRUE("dt_iop_breakpoint(dev, pipe)")
   // if image has changed, stop now.
-  if(pipe == dev->full.pipe && dev->image_force_reload) return TRUE;
-  if(pipe == dev->preview_pipe && dev->preview_pipe->loading) return TRUE;
-  if(pipe == dev->preview2.pipe && dev->preview2.pipe->loading) return TRUE;
-  if(dev->gui_leaving) return TRUE;
+  if(pipe == dev->full.pipe && dev->image_force_reload) HISTORY_TRUE("image_force_reload")
+  if(pipe == dev->preview_pipe && dev->preview_pipe->loading) HISTORY_TRUE("preview_pipe->loading")
+  if(pipe == dev->preview2.pipe && dev->preview2.pipe->loading) HISTORY_TRUE("preview2.pipe->loading")
+  if(dev->gui_leaving) HISTORY_TRUE("dev->gui_leaving")
 
   // 3) input -> output
   if(!modules)
   {
     // 3a) import input array with given scale and roi
     if(dt_atomic_get_int(&pipe->shutdown))
-      return TRUE;
+      SHUTDOWN_TRUE
 
     dt_times_t start;
     dt_get_perf_times(&start);
@@ -1510,7 +1546,7 @@ static gboolean _dev_pixelpipe_process_rec(
 
   // get region of interest which is needed in input
   if(dt_atomic_get_int(&pipe->shutdown))
-    return TRUE;
+    SHUTDOWN_TRUE
 
   module->modify_roi_in(module, piece, roi_out, &roi_in);
   if((darktable.unmuted & DT_DEBUG_PIPE) && memcmp(roi_out, &roi_in, sizeof(dt_iop_roi_t)))
@@ -1825,14 +1861,15 @@ static gboolean _dev_pixelpipe_process_rec(
         {
           dt_print_pipe(DT_DEBUG_PIPE,
                         "process",
-                        piece->pipe, module, pipe->devid, &roi_in, roi_out, "%s%s%s\n",
+                        piece->pipe, module, pipe->devid, &roi_in, roi_out, "pass(%d) %s%s%s\n",
+                        gRender_pass,
                         dt_iop_colorspace_to_name(cst_to),
                         cst_to != cst_out ? " -> " : "",
                         cst_to != cst_out ? dt_iop_colorspace_to_name(cst_out) : "");
 
           // this code section is for simplistic benchmarking via --bench-module
           if((piece->pipe->type & (DT_DEV_PIXELPIPE_FULL | DT_DEV_PIXELPIPE_EXPORT))
-             && darktable.bench_module)
+             && darktable.bench_module) // false
           {
             if(dt_str_commasubstring(darktable.bench_module, module->op))
             {
@@ -2685,12 +2722,14 @@ restart:
 
 #ifdef HAVE_OPENCL
   if(pipe->devid > DT_DEVICE_CPU)
-    dt_print_pipe(DT_DEBUG_PIPE, "pipe starting", pipe, NULL, pipe->devid, &roi, &roi, "ID %i, %s\n",
+    dt_print_pipe(DT_DEBUG_PIPE, "{ pipe starting", pipe, NULL, pipe->devid, &roi, &roi, "pass(%d) ID %i, %s\n",
+      gRender_pass,
       pipe->image.id,
       darktable.opencl->dev[pipe->devid].cname);
   else
 #endif
-    dt_print_pipe(DT_DEBUG_PIPE, "pipe starting", pipe, NULL, pipe->devid, &roi, &roi, "ID %i\n",
+    dt_print_pipe(DT_DEBUG_PIPE, "{ pipe starting", pipe, NULL, pipe->devid, &roi, &roi, "pass(%d) ID %i\n",
+      gRender_pass,
       pipe->image.id);
 
   // run pixelpipe recursively and get error status
@@ -2804,7 +2843,7 @@ restart:
   if(!claimed)
     dt_dev_pixelpipe_cache_report(pipe);
 
-  dt_print_pipe(DT_DEBUG_PIPE, "pipe finished", pipe, NULL, old_devid, &roi, &roi, "\n\n");
+  dt_print_pipe(DT_DEBUG_PIPE, "} pipe finished", pipe, NULL, old_devid, &roi, &roi, "\n\n");
 
   pipe->processing = FALSE;
   return FALSE;
