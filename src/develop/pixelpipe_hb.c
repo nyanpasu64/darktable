@@ -395,7 +395,7 @@ void dt_dev_pixelpipe_rebuild(dt_develop_t *dev)
 void dt_dev_pixelpipe_create_nodes(dt_dev_pixelpipe_t *pipe,
                                    dt_develop_t *dev)
 {
-  printf("{ dt_dev_pixelpipe_create_nodes pass(%d)\n", gRender_pass);
+  printf("{ dt_dev_pixelpipe_create_nodes pipe=%p, pass(%d)\n", pipe, gRender_pass);
   dt_pthread_mutex_lock(&pipe->busy_mutex); // block until pipe is idle
   // clear any pending shutdown request
   dt_atomic_set_int(&pipe->shutdown,FALSE);
@@ -2722,7 +2722,8 @@ restart:
 
 #ifdef HAVE_OPENCL
   if(pipe->devid > DT_DEVICE_CPU)
-    dt_print_pipe(DT_DEBUG_PIPE, "{ pipe starting", pipe, NULL, pipe->devid, &roi, &roi, "pass(%d) ID %i, %s\n",
+    dt_print_pipe(DT_DEBUG_PIPE, "{ pipe starting", pipe, NULL, pipe->devid, &roi, &roi, "pipe=%p, pass(%d) ID %i, %s\n",
+      pipe,
       gRender_pass,
       pipe->image.id,
       darktable.opencl->dev[pipe->devid].cname);
