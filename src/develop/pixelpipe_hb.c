@@ -395,7 +395,9 @@ void dt_dev_pixelpipe_rebuild(dt_develop_t *dev)
 void dt_dev_pixelpipe_create_nodes(dt_dev_pixelpipe_t *pipe,
                                    dt_develop_t *dev)
 {
-  printf("{ dt_dev_pixelpipe_create_nodes pipe=%p, pass(%d)\n", pipe, gRender_pass);
+  printf("{ dt_dev_pixelpipe_create_nodes(pipe=%p, pass(%d), dev=%p, iop=%p)\n",
+    pipe, gRender_pass, dev, dev->iop);
+
   dt_pthread_mutex_lock(&pipe->busy_mutex); // block until pipe is idle
   // clear any pending shutdown request
   dt_atomic_set_int(&pipe->shutdown,FALSE);
@@ -405,14 +407,20 @@ void dt_dev_pixelpipe_create_nodes(dt_dev_pixelpipe_t *pipe,
   g_assert(pipe->iop_order_list == NULL);
   pipe->iop_order_list = dt_ioppr_iop_order_copy_deep(dev->iop_order_list);
   // for all modules in dev:
+  // printf("dt_dev_pixelpipe_create_nodes(dev=%p, iop=%p)\n", dev, dev->iop);
+  printf("dt_dev_pixelpipe_create_nodes(pipe=%p): { g_list_copy\n", pipe);
   pipe->iop = g_list_copy(dev->iop);
+  printf("dt_dev_pixelpipe_create_nodes(pipe=%p): } g_list_copy\n", pipe);
+  dt_iop_module_t *final = NULL;
   for(GList *modules = pipe->iop; modules; modules = g_list_next(modules))
   {
     dt_iop_module_t *module = (dt_iop_module_t *)modules->data;
+    final = module;
     if (module && module->multi_priority != 0) {
       printf("- module %s%s%s\n",
         module->op, dt_iop_get_instance_id(module), module->enabled ? "" : " (disabled)");
     }
+
     dt_dev_pixelpipe_iop_t *piece =
       (dt_dev_pixelpipe_iop_t *)calloc(1, sizeof(dt_dev_pixelpipe_iop_t));
     piece->enabled = module->enabled;
@@ -442,6 +450,11 @@ void dt_dev_pixelpipe_create_nodes(dt_dev_pixelpipe_t *pipe,
     dt_iop_init_pipe(piece->module, pipe, piece);
     pipe->nodes = g_list_append(pipe->nodes, piece);
   }
+  if (final) {
+    printf("- final module = %s%s%s\n",
+      final->op, dt_iop_get_instance_id(final), final->enabled ? "" : " (disabled)");
+  }
+
   dt_pthread_mutex_unlock(&pipe->busy_mutex); // safe for others to
                                               // use/mess with the
                                               // pipe now
