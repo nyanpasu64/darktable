@@ -570,6 +570,17 @@ static gboolean _create_deleted_modules(GList **_iop_list, GList *history_list)
   return changed;
 }
 
+static void print_last_effect(dt_develop_t *dev, char const* prefix) {
+  GList *modules = g_list_last(dev->iop);
+  dt_iop_module_t *module = (dt_iop_module_t *)modules->data;
+  if (module) {
+    printf("%s" "ends with module %s%s%s\n",
+      prefix,
+      module->op, dt_iop_get_instance_id(module), module->enabled ? "" : " (disabled)");
+  }
+
+}
+
 static void _pop_undo(gpointer user_data,
                       dt_undo_type_t type,
                       dt_undo_data_t data,
@@ -590,6 +601,7 @@ static void _pop_undo(gpointer user_data,
     int history_end_temp = hist->history_end;
     GList *iop_order_list_temp = hist->iop_order_list;
 
+    printf("_pop_undo(dev=%p, iop=%p)\n", dev, dev->iop);
     GList *iop_temp = g_list_copy(dev->iop);
 
     // topology has changed?
@@ -599,6 +611,7 @@ static void _pop_undo(gpointer user_data,
     // we will adjust it here
     if(_rebuild_multi_priority(history_temp))
     {
+      printf("_pop_undo(): _rebuild_multi_priority() = true\n");
       pipe_remove = TRUE;
       iop_temp = g_list_sort(iop_temp, dt_sort_iop_by_order);
     }
@@ -631,9 +644,12 @@ static void _pop_undo(gpointer user_data,
 
     g_list_free(dev->iop);
     dev->iop = iop_temp;
+    printf("_pop_undo(): dev->iop=%p, pipe_remove=%d\n", dev->iop, pipe_remove);
+    print_last_effect(dev, "_pop_undo():    ");
 
     // topology has changed
     dt_dev_pixelpipe_rebuild(dev);
+    print_last_effect(dev, "_pop_undo():    ");
 
     dt_pthread_mutex_unlock(&dev->history_mutex);
 
@@ -642,9 +658,12 @@ static void _pop_undo(gpointer user_data,
 
     // write new history and reload
     dt_dev_write_history(dev);
+    printf("_pop_undo(): { dt_dev_reload_history_items()\n");
     dt_dev_reload_history_items(dev);
 
+    printf("_pop_undo(): } { dt_ioppr_resync_modules_order()\n");
     dt_ioppr_resync_modules_order(dev);
+    printf("_pop_undo(): } dt_ioppr_resync_modules_order()\n");
 
     dt_dev_modulegroups_set(darktable.develop,
                             dt_dev_modulegroups_get(darktable.develop));
