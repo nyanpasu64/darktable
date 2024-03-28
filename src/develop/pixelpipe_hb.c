@@ -613,9 +613,9 @@ void dt_dev_pixelpipe_change(dt_dev_pixelpipe_t *pipe, struct dt_develop_t *dev)
   int old_render_pass = gRender_pass;
   // TODO https://www.pcg-random.org/download.html
   if (gRender_pass == 0) {
-    gRender_pass = atomic_fetch_add_explicit(&gTid, 100, memory_order_relaxed);
+    gRender_pass = atomic_fetch_add_explicit(&gTid, 1000000, memory_order_relaxed);
   } else {
-    gRender_pass = (gRender_pass << 5) + gRender_pass + 1;
+    gRender_pass++;
   }
   printf("pass %d -> %d\n", old_render_pass, gRender_pass);
 
