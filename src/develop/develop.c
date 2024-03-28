@@ -1136,17 +1136,32 @@ void dt_dev_free_history_item(gpointer data)
   free(item);
 }
 
+static void print_last_effect(dt_develop_t *dev, int line) {
+  GList *modules = g_list_last(dev->iop);
+  dt_iop_module_t *module = (dt_iop_module_t *)modules->data;
+  if (module) {
+    printf("develop.c:%d:    ends with module %s%s%s\n",
+      line,
+      module->op, dt_iop_get_instance_id(module), module->enabled ? "" : " (disabled)");
+  }
+}
+#define PRINT_LAST_EFFECT(DEV) print_last_effect(DEV, __LINE__)
+
 #define LOG(...) printf("%s -> %s\n", __func__, #__VA_ARGS__); __VA_ARGS__
 #define SAY(S) printf("%s -> %s\n", __func__, S)
 
 void dt_dev_reload_history_items(dt_develop_t *dev)
 {
+  PRINT_LAST_EFFECT(dev);
   dev->focus_hash = 0;
 
   dt_lock_image(dev->image_storage.id);
 
+  PRINT_LAST_EFFECT(dev);
   dt_ioppr_set_default_iop_order(dev, dev->image_storage.id);
+  PRINT_LAST_EFFECT(dev);
   dt_dev_pop_history_items(dev, 0);
+  PRINT_LAST_EFFECT(dev);
 
   // remove unused history items:
   GList *history = g_list_nth(dev->history, dev->history_end);
@@ -1160,7 +1175,9 @@ void dt_dev_reload_history_items(dt_develop_t *dev)
     dev->history = g_list_delete_link(dev->history, history);
     history = next;
   }
+  PRINT_LAST_EFFECT(dev);
   LOG(dt_dev_read_history(dev));
+  PRINT_LAST_EFFECT(dev);
 
   // we have to add new module instances first
   for(GList *modules = dev->iop; modules; modules = g_list_next(modules))
@@ -1210,6 +1227,7 @@ void dt_dev_pop_history_items_ext(dt_develop_t *dev, const int32_t cnt)
   const int end_prev = dev->history_end;
   dev->history_end = cnt;
 
+  PRINT_LAST_EFFECT(dev);
   // reset gui params for all modules
   for(GList *modules = dev->iop; modules; modules = g_list_next(modules))
   {
@@ -1227,6 +1245,7 @@ void dt_dev_pop_history_items_ext(dt_develop_t *dev, const int32_t cnt)
     }
   }
 
+  PRINT_LAST_EFFECT(dev);
   // go through history and set gui params
   GList *forms = NULL;
   GList *history = dev->history;
@@ -1248,10 +1267,13 @@ void dt_dev_pop_history_items_ext(dt_develop_t *dev, const int32_t cnt)
     history = g_list_next(history);
   }
 
+  PRINT_LAST_EFFECT(dev);
   dt_ioppr_resync_modules_order(dev);
 
+  PRINT_LAST_EFFECT(dev);
   dt_ioppr_check_duplicate_iop_order(&dev->iop, dev->history);
 
+  PRINT_LAST_EFFECT(dev);
   dt_ioppr_check_iop_order(dev, 0, "dt_dev_pop_history_items_ext end");
 
   // check if masks have changed
@@ -1273,6 +1295,8 @@ void dt_dev_pop_history_items_ext(dt_develop_t *dev, const int32_t cnt)
   }
   if(masks_changed)
     dt_masks_replace_current_forms(dev, forms);
+
+  PRINT_LAST_EFFECT(dev);
 }
 
 void dt_dev_pop_history_items(dt_develop_t *dev, const int32_t cnt)
@@ -1281,7 +1305,9 @@ void dt_dev_pop_history_items(dt_develop_t *dev, const int32_t cnt)
   ++darktable.gui->reset;
   GList *dev_iop = g_list_copy(dev->iop);
 
+  PRINT_LAST_EFFECT(dev);
   dt_dev_pop_history_items_ext(dev, cnt);
+  PRINT_LAST_EFFECT(dev);
 
   darktable.develop->history_updating = TRUE;
 
@@ -2006,6 +2032,7 @@ void dt_dev_read_history_ext(dt_develop_t *dev,
   dt_iop_module_t *channelmixerrgb = NULL;
   dt_iop_module_t *temperature = NULL;
 
+  PRINT_LAST_EFFECT(dev);
   // Strip rows from DB lookup. One row == One module in history
   while(sqlite3_step(stmt) == SQLITE_ROW)
   {
@@ -2049,6 +2076,7 @@ void dt_dev_read_history_ext(dt_develop_t *dev,
     // run the params stored in DB
     dt_iop_module_t *find_op = NULL;
 
+    PRINT_LAST_EFFECT(dev);
     for(GList *modules = dev->iop; modules; modules = g_list_next(modules))
     {
       dt_iop_module_t *module = (dt_iop_module_t *)modules->data;
@@ -2094,6 +2122,7 @@ void dt_dev_read_history_ext(dt_develop_t *dev,
         hist->module = new_module;
       }
     }
+    PRINT_LAST_EFFECT(dev);
 
     if(!hist->module)
     {
@@ -2261,8 +2290,10 @@ void dt_dev_read_history_ext(dt_develop_t *dev,
     temperature->reload_defaults(temperature);
   }
 
+  PRINT_LAST_EFFECT(dev);
   LOG(dt_ioppr_resync_modules_order(dev));
   SAY("end dt_ioppr_resync_modules_order()");
+  PRINT_LAST_EFFECT(dev);
 
   if(dev->snapshot_id == -1)
   {
