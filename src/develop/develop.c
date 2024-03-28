@@ -1136,6 +1136,9 @@ void dt_dev_free_history_item(gpointer data)
   free(item);
 }
 
+#define LOG(...) printf("%s -> %s\n", __func__, #__VA_ARGS__); __VA_ARGS__
+#define SAY(S) printf("%s -> %s\n", __func__, S)
+
 void dt_dev_reload_history_items(dt_develop_t *dev)
 {
   dev->focus_hash = 0;
@@ -1157,7 +1160,7 @@ void dt_dev_reload_history_items(dt_develop_t *dev)
     dev->history = g_list_delete_link(dev->history, history);
     history = next;
   }
-  dt_dev_read_history(dev);
+  LOG(dt_dev_read_history(dev));
 
   // we have to add new module instances first
   for(GList *modules = dev->iop; modules; modules = g_list_next(modules))
@@ -1189,7 +1192,8 @@ void dt_dev_reload_history_items(dt_develop_t *dev)
     }
   }
 
-  dt_dev_pop_history_items(dev, dev->history_end);
+  LOG(dt_dev_pop_history_items(dev, dev->history_end));
+  SAY("END dt_dev_pop_history_items()");
 
   dt_ioppr_resync_iop_list(dev);
 
@@ -2082,6 +2086,7 @@ void dt_dev_read_history_ext(dt_develop_t *dev,
 
         g_strlcpy(new_module->multi_name, multi_name, sizeof(new_module->multi_name));
         new_module->multi_name_hand_edited = multi_name_hand_edited;
+        printf("- appending module %s%s\n", new_module->op, dt_iop_get_instance_id(new_module));
 
         dev->iop = g_list_append(dev->iop, new_module);
 
@@ -2256,7 +2261,8 @@ void dt_dev_read_history_ext(dt_develop_t *dev,
     temperature->reload_defaults(temperature);
   }
 
-  dt_ioppr_resync_modules_order(dev);
+  LOG(dt_ioppr_resync_modules_order(dev));
+  SAY("end dt_ioppr_resync_modules_order()");
 
   if(dev->snapshot_id == -1)
   {
